@@ -3,37 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <title>Weather App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="container">
-        <h1>Weather App</h1>
-        <form method="POST">
-            <input type="text" name="location" placeholder="Enter city or zip code" required>
-            <button type="submit">Get Weather</button>
+<body class="bg-gradient-to-br from-blue-400 to-blue-600 min-h-screen flex items-center justify-center text-white">
+    <div class="bg-white text-gray-900 rounded-lg shadow-lg p-8 max-w-lg w-full">
+        <h1 class="text-3xl font-bold text-center mb-6 text-blue-600">Weather App</h1>
+        <form method="POST" class="mb-6">
+            <div class="flex items-center space-x-2">
+                <input 
+                    type="text" 
+                    name="location" 
+                    placeholder="Enter city or zip code" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required>
+                <button 
+                    type="submit" 
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">
+                    Search
+                </button>
+            </div>
         </form>
+        <button 
+            id="current-location-btn" 
+            class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg mb-6">
+            Use My Current Location
+        </button>
 
-        {% if error %}
-            <p>{{ error }}</p>
-        {% endif %}
+        <div id="weather-output" class="text-center">
+            {% if error %}
+                <p class="text-red-500 font-semibold">{{ error }}</p>
+            {% endif %}
 
-        {% if weather %}
-            <h2>Weather for {{ city_name }}</h2>
-            <p>Current Temperature: {{ weather.current.temp }}°C</p>
-            <p>Condition: {{ weather.current.weather[0].description }}</p>
-            <p>Humidity: {{ weather.current.humidity }}%</p>
-            <p>Wind Speed: {{ weather.current.wind_speed }} m/s</p>
+            {% if weather %}
+                <h2 class="text-xl font-bold text-blue-600 mb-4">Weather for {{ city_name }}</h2>
+                <p class="text-lg mb-2">🌡️ Temperature: <strong>{{ weather.current.temp }}°F</strong></p>
+                <p class="text-lg mb-2">🌥 Condition: <strong>{{ weather.current.weather[0].description }}</strong></p>
+                <p class="text-lg mb-2">💧 Humidity: <strong>{{ weather.current.humidity }}%</strong></p>
+                <p class="text-lg mb-6">🌬️ Wind Speed: <strong>{{ weather.current.wind_speed }} mph</strong></p>
 
-            <h3>5-Day Forecast</h3>
-            <ul>
-                {% for day in weather.daily[:5] %}
-                    <li>
-                        Day {{ loop.index }}: Temp: {{ day.temp.day }}°C, Condition: {{ day.weather[0].description }}
-                    </li>
-                {% endfor %}
-            </ul>
-        {% endif %}
+                <h3 class="text-lg font-bold text-blue-600 mb-2">5-Day Forecast</h3>
+                <ul class="space-y-2">
+                    {% for day in weather.daily[:5] %}
+                        <li class="bg-gray-100 text-gray-900 rounded-lg p-4">
+                            Day {{ loop.index }}: Temp: <strong>{{ day.temp.day }}°F</strong>, 
+                            Condition: <strong>{{ day.weather[0].description }}</strong>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </div>
     </div>
+
+    <script>
+        document.getElementById("current-location-btn").addEventListener("click", () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+        
+                        // Send latitude and longitude to the server
+                        fetch("/weather_by_location", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({ lat: latitude, lon: longitude }),
+                        })
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (data.error) {
+                                document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">${data.error}</p>`;
+                            } else {
+                                let forecastHTML = "";
+                                data.daily.slice(0, 5).forEach((day, index) => {
+                                    forecastHTML += `
+                                        <li class="bg-gray-100 text-gray-900 rounded-lg p-4">
+                                            Day ${index + 1}: Temp: <strong>${day.temp.day}°F</strong>, 
+                                            Condition: <strong>${day.weather[0].description}</strong>
+                                        </li>`;
+                                });
+        
+                                document.getElementById("weather-output").innerHTML = `
+                                    <h2 class="text-xl font-bold text-blue-600 mb-4">Weather for ${data.city_name}</h2>
+                                    <p class="text-lg mb-2">🌡️ Temperature: <strong>${data.current.temp}°F</strong></p>
+                                    <p class="text-lg mb-2">🌥️ Condition: <strong>${data.current.weather[0].description}</strong></p>
+                                    <p class="text-lg mb-2">💧 Humidity: <strong>${data.current.humidity}%</strong></p>
+                                    <p class="text-lg mb-6">🌬️ Wind Speed: <strong>${data.current.wind_speed} mph</strong></p>
+                                    <h3 class="text-lg font-bold text-blue-600 mb-2">5-Day Forecast</h3>
+                                    <ul class="space-y-2">${forecastHTML}</ul>
+                                `;
+                            }
+                        })
+                        .catch((error) => {
+                            document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">Error fetching weather data. Please try again.</p>`;
+                        });
+                    },
+                    () => {
+                        document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">Unable to retrieve your location. Please enable location services.</p>`;
+                    }
+                );
+            } else {
+                document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">Geolocation is not supported by this browser.</p>`;
+            }
+        });
+        
+    </script>
 </body>
 </html>
