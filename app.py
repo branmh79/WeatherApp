@@ -3,17 +3,23 @@ import csv
 import io
 import requests
 import os
+import json
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, db
+import base64
 import time
 
-# Initialize Firebase
-cred = credentials.Certificate("firebase/creds.json")
-firebase_admin.initialize_app(cred, {
-    "databaseURL": "https://weatherapp-27614-default-rtdb.firebaseio.com/"
-})
+# Path to the credentials file
+CREDENTIALS_PATH = "firebase\creds.json"  # Replace with the actual path
+
+# Initialize Firebase Admin SDK
+if not firebase_admin._apps:
+    cred = credentials.Certificate(CREDENTIALS_PATH)
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://weatherapp-27614-default-rtdb.firebaseio.com/'
+    })
 
 # Load environment variables
 load_dotenv()
