@@ -9,102 +9,147 @@
 <body class="bg-gradient-to-br from-blue-400 to-blue-600 min-h-screen flex items-center justify-center text-white">
     <div class="bg-white text-gray-900 rounded-lg shadow-lg p-8 max-w-lg w-full">
         <h1 class="text-3xl font-bold text-center mb-6 text-blue-600">Weather App</h1>
-        <form method="POST" class="mb-6">
-            <div class="flex items-center space-x-2">
-                <input 
-                    type="text" 
-                    name="location" 
-                    placeholder="Enter city or zip code" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required>
-                <button 
-                    type="submit" 
-                    class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">
-                    Search
+        <form id="weather-form" class="space-y-4">
+            <input type="text" id="location" placeholder="Enter location" required
+                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="flex space-x-4">
+                <input type="date" id="start-date" placeholder="Start date" required
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="date" id="end-date" placeholder="End date" required
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center space-x-4">
+                <button type="button" id="use-location"
+                    class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">
+                    Use Current Location
                 </button>
             </div>
+            
+            <button type="button" id="submit-request"
+                class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">
+                Submit
+            </button>
         </form>
-        <button 
-            id="current-location-btn" 
-            class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg mb-6">
-            Use My Current Location
-        </button>
+        <div id="form-feedback" class="mt-4 text-center"></div>
 
-        <div id="weather-output" class="text-center">
-            {% if error %}
-                <p class="text-red-500 font-semibold">{{ error }}</p>
-            {% endif %}
-
-            {% if weather %}
-                <h2 class="text-xl font-bold text-blue-600 mb-4">Weather for {{ city_name }}</h2>
-                <p class="text-lg mb-2">🌡️ Temperature: <strong>{{ weather.current.temp }}°F</strong></p>
-                <p class="text-lg mb-2">🌥 Condition: <strong>{{ weather.current.weather[0].description }}</strong></p>
-                <p class="text-lg mb-2">💧 Humidity: <strong>{{ weather.current.humidity }}%</strong></p>
-                <p class="text-lg mb-6">🌬️ Wind Speed: <strong>{{ weather.current.wind_speed }} mph</strong></p>
-
-                <h3 class="text-lg font-bold text-blue-600 mb-2">5-Day Forecast</h3>
-                <ul class="space-y-2">
-                    {% for day in weather.daily[:5] %}
-                        <li class="bg-gray-100 text-gray-900 rounded-lg p-4">
-                            Day {{ loop.index }}: Temp: <strong>{{ day.temp.day }}°F</strong>, 
-                            Condition: <strong>{{ day.weather[0].description }}</strong>
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
+        <div id="weather-output" class="mt-6 hidden">
+            <!-- Weather data will be dynamically rendered here -->
         </div>
     </div>
 
     <script>
-        document.getElementById("current-location-btn").addEventListener("click", () => {
+        document.getElementById("submit-request").addEventListener("click", () => {
+            const location = document.getElementById("location").value;
+            const startDate = document.getElementById("start-date").value;
+            const endDate = document.getElementById("end-date").value;
+        
+            const feedback = document.getElementById("form-feedback");
+            const weatherOutput = document.getElementById("weather-output");
+        
+            if (!location || !startDate || !endDate) {
+                feedback.innerHTML = `<p class="text-red-500">All fields are required.</p>`;
+                weatherOutput.style.display = "none";
+                return;
+            }
+        
+            feedback.innerHTML = `<p class="text-blue-500">Fetching weather data...</p>`;
+        
+            fetch("/create", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    location: location,
+                    start_date: startDate,
+                    end_date: endDate,
+                }),
+            })
+                .then((response) => {
+                    console.log("Response status:", response.status); // Debug log
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then((data) => {
+                    console.log("Data received from server:", data); // Debug log
+                    if (data.error) {
+                        feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
+                        weatherOutput.style.display = "none";
+                    } else {
+                        feedback.innerHTML = `<p class="text-green-500">${data.message}</p>`;
+                        let weatherHTML = "";
+                        data.weather_data.forEach((day) => {
+                            const dailyData = day.data[0];
+                            weatherHTML += `
+                                <div class="bg-gray-100 p-4 rounded-lg mb-2 text-gray-900">
+                                    <p>Date: ${new Date(dailyData.dt * 1000).toLocaleDateString()}</p>
+                                    <p>Temperature: ${dailyData.temp}°F</p>
+                                    <p>Conditions: ${dailyData.weather[0].description}</p>
+                                </div>`;
+                        });                        
+            
+                        weatherOutput.style.display = "block";
+                        weatherOutput.innerHTML = `
+                            <h2 class="text-xl font-bold text-blue-600 mt-4">Weather for ${data.location}</h2>
+                            ${weatherHTML}`;
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error caught in frontend:", error); // Debug log
+                    feedback.innerHTML = `<p class="text-red-500">An error occurred. Please try again later.</p>`;
+                    weatherOutput.style.display = "none";
+                });
+            
+        });
+        
+        document.getElementById("use-location").addEventListener("click", () => {
+            const feedback = document.getElementById("form-feedback");
+            const weatherOutput = document.getElementById("weather-output");
+        
+            // Display loading feedback
+            feedback.innerHTML = `<p class="text-blue-500">Fetching your location...</p>`;
+        
+            // Get the user's current location using the Geolocation API
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        const { latitude, longitude } = position.coords;
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
         
-                        // Send latitude and longitude to the server
-                        fetch("/weather_by_location", {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({ lat: latitude, lon: longitude }),
-                        })
-                        .then((response) => response.json())
-                        .then((data) => {
-                            if (data.error) {
-                                document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">${data.error}</p>`;
-                            } else {
-                                let forecastHTML = "";
-                                data.daily.slice(0, 5).forEach((day, index) => {
-                                    forecastHTML += `
-                                        <li class="bg-gray-100 text-gray-900 rounded-lg p-4">
-                                            Day ${index + 1}: Temp: <strong>${day.temp.day}°F</strong>, 
-                                            Condition: <strong>${day.weather[0].description}</strong>
-                                        </li>`;
-                                });
-        
-                                document.getElementById("weather-output").innerHTML = `
-                                    <h2 class="text-xl font-bold text-blue-600 mb-4">Weather for ${data.city_name}</h2>
-                                    <p class="text-lg mb-2">🌡️ Temperature: <strong>${data.current.temp}°F</strong></p>
-                                    <p class="text-lg mb-2">🌥️ Condition: <strong>${data.current.weather[0].description}</strong></p>
-                                    <p class="text-lg mb-2">💧 Humidity: <strong>${data.current.humidity}%</strong></p>
-                                    <p class="text-lg mb-6">🌬️ Wind Speed: <strong>${data.current.wind_speed} mph</strong></p>
-                                    <h3 class="text-lg font-bold text-blue-600 mb-2">5-Day Forecast</h3>
-                                    <ul class="space-y-2">${forecastHTML}</ul>
-                                `;
-                            }
-                        })
-                        .catch((error) => {
-                            document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">Error fetching weather data. Please try again.</p>`;
-                        });
+                        // Fetch current weather for the user's location
+                        fetch(`/current-weather?lat=${lat}&lon=${lon}`)
+                            .then((response) => {
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                }
+                                return response.json();
+                            })
+                            .then((data) => {
+                                feedback.innerHTML = `<p class="text-green-500">Weather data fetched successfully!</p>`;
+                                weatherOutput.style.display = "block";
+                                weatherOutput.innerHTML = `
+                                    <h2 class="text-xl font-bold text-blue-600 mt-4">Weather for ${data.location}</h2>
+                                    <div class="bg-gray-100 p-4 rounded-lg mb-2 text-gray-900">
+                                        <p>Temperature: ${data.temp}°F</p>
+                                        <p>Conditions: ${data.weather}</p>
+                                    </div>`;
+                            })
+                            .catch((error) => {
+                                console.error("Error fetching weather data:", error);
+                                feedback.innerHTML = `<p class="text-red-500">Unable to fetch weather data. Please try again later.</p>`;
+                                weatherOutput.style.display = "none";
+                            });
                     },
-                    () => {
-                        document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">Unable to retrieve your location. Please enable location services.</p>`;
+                    (error) => {
+                        console.error("Geolocation error:", error);
+                        feedback.innerHTML = `<p class="text-red-500">Unable to access your location. Please enable location services and try again.</p>`;
+                        weatherOutput.style.display = "none";
                     }
                 );
             } else {
-                document.getElementById("weather-output").innerHTML = `<p class="text-red-500 font-semibold">Geolocation is not supported by this browser.</p>`;
+                feedback.innerHTML = `<p class="text-red-500">Geolocation is not supported by your browser.</p>`;
             }
         });
         
