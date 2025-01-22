@@ -39,8 +39,20 @@
         <div id="weather-output" class="mt-6 hidden">
             <h2 class="text-xl font-bold text-blue-600 mt-4">Weather Output</h2>
             <p id="data-source" class="text-sm text-gray-600 mb-4"></p>
-            <div class="flex overflow-x-auto space-x-4 mt-4 scrollbar-thin scrollbar-thumb-blue-500 scrollbar-track-blue-200">
-                <!-- Weather cards will be dynamically rendered here -->
+            <div id="weather-card-container" class="relative w-full">
+                <!-- Navigational Arrows -->
+                <button id="prev-day" class="absolute left-0 top-1/2 transform -translate-y-1/2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-l-lg hidden">
+                    &larr; Previous
+                </button>
+                <div id="weather-card" class="bg-gray-100 p-6 rounded-lg shadow-lg text-gray-900 w-full text-center">
+                    <p id="weather-date" class="text-lg font-bold"></p>
+                    <p id="weather-temp" class="text-2xl font-semibold my-2"></p>
+                    <p id="weather-conditions" class="text-lg"></p>
+                    <p id="weather-extra" class="text-sm mt-4"></p>
+                </div>
+                <button id="next-day" class="absolute right-0 top-1/2 transform -translate-y-1/2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-r-lg hidden">
+                    Next &rarr;
+                </button>
             </div>
         </div>
     </div>
@@ -50,21 +62,92 @@
             const locationInput = document.getElementById("location");
             const locationList = document.getElementById("location-list");
             const weatherOutput = document.getElementById("weather-output");
-            const weatherContainer = weatherOutput.querySelector(".flex");
+            const weatherCard = document.getElementById("weather-card");
+            const weatherDate = document.getElementById("weather-date");
+            const weatherTemp = document.getElementById("weather-temp");
+            const weatherConditions = document.getElementById("weather-conditions");
+            const weatherExtra = document.getElementById("weather-extra");
+            const prevDayButton = document.getElementById("prev-day");
+            const nextDayButton = document.getElementById("next-day");
             const dataSource = document.getElementById("data-source");
             const feedback = document.getElementById("form-feedback");
+
+            let currentIndex = 0;
+            let weatherData = [];
+
+            const updateWeatherCard = () => {
+                const day = weatherData[currentIndex];
+                const [year, month, dayOfMonth] = day.date.split("-");
+                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                const formattedDate = `${months[parseInt(month, 10) - 1]} ${dayOfMonth}`;
+            
+                weatherDate.textContent = formattedDate;
+                weatherTemp.textContent = `Temp: ${day.temp !== "N/A" ? `${day.temp}°F` : "Temperature not available"}`;
+                weatherConditions.textContent = `Conditions: ${day.conditions || "Conditions not available"}`;
+                weatherExtra.textContent = `
+                    Humidity: ${day.humidity !== "N/A" ? `${day.humidity}%` : "N/A"},
+                    Wind: ${day.wind_speed !== "N/A" ? `${day.wind_speed} mph` : "N/A"}
+                `;
+            
+                prevDayButton.style.display = currentIndex > 0 ? "block" : "none";
+                nextDayButton.style.display = currentIndex < weatherData.length - 1 ? "block" : "none";
+            };
+            
+
+            prevDayButton.addEventListener("click", () => {
+                if (currentIndex > 0) {
+                    currentIndex--;
+                    updateWeatherCard();
+                }
+            });
+
+            nextDayButton.addEventListener("click", () => {
+                if (currentIndex < weatherData.length - 1) {
+                    currentIndex++;
+                    updateWeatherCard();
+                }
+            });
+
+            const fetchWeatherFromDatabase = (location) => {
+                feedback.innerHTML = `<p class="text-blue-500">Fetching data from the database...</p>`;
+                fetch(`/current-weather?location=${encodeURIComponent(location)}`)
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then((data) => {
+                        if (data.error) {
+                            feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
+                            weatherOutput.style.display = "none";
+                        } else {
+                            feedback.innerHTML = "";
+                            dataSource.innerHTML = `Displaying ${data.weather_data.length} days from the database.`;
+                            weatherData = data.weather_data;
+                            currentIndex = 0;
+                            updateWeatherCard();
+                            weatherOutput.style.display = "block";
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error fetching data from database:", error);
+                        feedback.innerHTML = `<p class="text-red-500">An error occurred while fetching data from the database. Please try again later.</p>`;
+                        weatherOutput.style.display = "none";
+                    });
+            };
 
             const updateLocationList = () => {
                 fetch("/read-locations")
                     .then((response) => response.json())
                     .then((data) => {
                         const locations = data.locations;
-            
+
                         if (locations && locations.length > 0) {
                             locationList.innerHTML = locations
                                 .map((loc) => `<li class="px-4 py-2 cursor-pointer hover:bg-gray-100">${loc}</li>`)
                                 .join("");
-            
+
                             const listItems = locationList.querySelectorAll("li");
                             listItems.forEach((item) => {
                                 item.addEventListener("click", () => {
@@ -82,89 +165,27 @@
                         locationList.innerHTML = `<li class="px-4 py-2 text-red-500">Failed to fetch locations</li>`;
                     });
             };
-            
-            
-
-            const fetchWeatherFromDatabase = (location) => {
-                feedback.innerHTML = `<p class="text-blue-500">Fetching data from the database...</p>`;
-            
-                fetch(`/current-weather?location=${encodeURIComponent(location)}`)
-                    .then((response) => {
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then((data) => {
-                        if (data.error) {
-                            feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
-                            weatherOutput.style.display = "none";
-                        } else {
-                            feedback.innerHTML = "";
-                            dataSource.innerHTML = `Displaying ${data.weather_data.length} days from the database.`;
-                            weatherContainer.innerHTML = ""; // Clear previous results
-                            data.weather_data.forEach((day) => {
-                                const [year, month, dayOfMonth] = day.date.split("-");
-                                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-                                const formattedDate = `${months[parseInt(month, 10) - 1]}${dayOfMonth}`; // Format as 'Jan19'
-                                const temp = day.temp !== undefined ? `${day.temp}°F` : "N/A";
-                                const conditions = day.conditions || "N/A";
-            
-                                weatherContainer.innerHTML += `
-                                    <div class="bg-gray-100 p-4 rounded-lg w-40 flex-shrink-0 text-gray-900">
-                                        <p class="font-bold">${formattedDate}</p>
-                                        <p>Temp: ${temp}</p>
-                                        <p>${conditions}</p>
-                                    </div>`;
-                            });
-            
-                            weatherOutput.style.display = "block";
-                        }
-                    })
-                    .catch((error) => {
-                        console.error("Error fetching data from database:", error);
-                        feedback.innerHTML = `<p class="text-red-500">An error occurred while fetching data from the database. Please try again later.</p>`;
-                        weatherOutput.style.display = "none";
-                    });
-            };
-            
-            
-
-            // Initial call to populate the location list
-            updateLocationList();
-
-            // Show dropdown when input is clicked
-            locationInput.addEventListener("click", () => {
-                locationList.style.display = locationList.style.display === "block" ? "none" : "block";
-            });
-
-            // Hide dropdown when clicking outside
-            document.addEventListener("click", (event) => {
-                if (!locationInput.contains(event.target) && !locationList.contains(event.target)) {
-                    locationList.style.display = "none";
-                }
-            });
 
             document.getElementById("use-location").addEventListener("click", () => {
                 if (!navigator.geolocation) {
                     feedback.innerHTML = `<p class="text-red-500">Geolocation is not supported by your browser.</p>`;
                     return;
                 }
-            
+
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         const lat = position.coords.latitude;
                         const lon = position.coords.longitude;
                         const startDate = document.getElementById("start-date").value;
                         const endDate = document.getElementById("end-date").value;
-            
+
                         if (!startDate || !endDate) {
                             feedback.innerHTML = `<p class="text-red-500">Please select a start and end date.</p>`;
                             return;
                         }
-            
+
                         feedback.innerHTML = `<p class="text-blue-500">Fetching weather for your current location...</p>`;
-            
+
                         fetch(`/current-weather?lat=${lat}&lon=${lon}&start_date=${startDate}&end_date=${endDate}`)
                             .then((response) => {
                                 if (!response.ok) {
@@ -179,22 +200,9 @@
                                 } else {
                                     feedback.innerHTML = "";
                                     dataSource.innerHTML = `Displaying weather for current location (${data.location}).`;
-                                    weatherContainer.innerHTML = ""; // Clear previous results
-                                    data.weather_data.forEach((day) => {
-                                        const [year, month, dayOfMonth] = day.date.split("-");
-                                        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-                                        const formattedDate = `${months[parseInt(month, 10) - 1]}${dayOfMonth}`; // Format as 'Jan19'
-                                        const temp = day.temp !== "N/A" ? `${day.temp}°F` : "Temperature not available";
-                                        const conditions = day.conditions !== "N/A" ? day.conditions : "Conditions not available";
-                                    
-                                        weatherContainer.innerHTML += `
-                                            <div class="bg-gray-100 p-4 rounded-lg w-40 flex-shrink-0 text-gray-900">
-                                                <p class="font-bold">${formattedDate}</p>
-                                                <p>Temp: ${temp}</p>
-                                                <p>${conditions}</p>
-                                            </div>`;
-                                    });
-            
+                                    weatherData = data.weather_data;
+                                    currentIndex = 0;
+                                    updateWeatherCard();
                                     weatherOutput.style.display = "block";
                                 }
                             })
@@ -210,26 +218,24 @@
                     }
                 );
             });
-            
-            
-            
+
             document.getElementById("submit-request").addEventListener("click", () => {
                 const location = document.getElementById("location").value;
                 const startDate = document.getElementById("start-date").value;
                 const endDate = document.getElementById("end-date").value;
-            
+
                 if (!location || !startDate || !endDate) {
                     feedback.innerHTML = `<p class="text-red-500">All fields are required.</p>`;
                     weatherOutput.style.display = "none";
                     return;
                 }
-            
+
                 feedback.innerHTML = `<p class="text-blue-500">Fetching weather data...</p>`;
-            
+
                 fetch("/create", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ location, start_date: startDate, end_date: endDate })
+                    body: JSON.stringify({ location, start_date: startDate, end_date: endDate }),
                 })
                     .then((response) => {
                         if (!response.ok) {
@@ -244,22 +250,9 @@
                         } else {
                             feedback.innerHTML = `<p class="text-green-500">${data.message}</p>`;
                             dataSource.innerHTML = `Displaying weather for ${data.location}`;
-                            weatherContainer.innerHTML = ""; // Clear previous results
-                            data.weather_data.forEach((day) => {
-                                const [year, month, dayOfMonth] = day.date.split("-");
-                                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-                                const formattedDate = `${months[parseInt(month, 10) - 1]}${dayOfMonth}`; // Format as 'Jan19'
-                                const temp = day.temp !== "N/A" ? `${day.temp}°F` : "Temperature not available";
-                                const conditions = day.conditions !== "N/A" ? day.conditions : "Conditions not available";
-                            
-                                weatherContainer.innerHTML += `
-                                    <div class="bg-gray-100 p-4 rounded-lg w-40 flex-shrink-0 text-gray-900">
-                                        <p class="font-bold">${formattedDate}</p>
-                                        <p>Temp: ${temp}</p>
-                                        <p>${conditions}</p>
-                                    </div>`;
-                            });
-            
+                            weatherData = data.weather_data;
+                            currentIndex = 0;
+                            updateWeatherCard();
                             weatherOutput.style.display = "block";
 
                             updateLocationList();
@@ -271,7 +264,18 @@
                         weatherOutput.style.display = "none";
                     });
             });
-            
+
+            updateLocationList();
+
+            locationInput.addEventListener("click", () => {
+                locationList.style.display = locationList.style.display === "block" ? "none" : "block";
+            });
+
+            document.addEventListener("click", (event) => {
+                if (!locationInput.contains(event.target) && !locationList.contains(event.target)) {
+                    locationList.style.display = "none";
+                }
+            });
         });
     </script>
 </body>

@@ -34,8 +34,52 @@ def validate_date_range(start_date, end_date):
 def home():
     return render_template("index.html")
 
-# CREATE endpoint
+@app.route("/current-weather", methods=["GET"])
+def current_weather():
+    try:
+        location = request.args.get("location")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
 
+        print(f"Request received: location={location}, start_date={start_date}, end_date={end_date}")
+
+        if not location:
+            return jsonify({"error": "Location is required."}), 400
+
+        # Fetch data from Firebase
+        ref = db.reference("weather_requests")
+        saved_data = ref.order_by_child("location").equal_to(location).get()
+        print(f"Query result for location '{location}': {saved_data}")
+
+        if saved_data:
+            for key, value in saved_data.items():
+                weather_data = value.get("weather_data", [])
+                filtered_weather_data = []
+
+                # Filter weather data by date range if provided
+                if start_date and end_date:
+                    start_date_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+                    end_date_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+                    filtered_weather_data = [
+                        entry for entry in weather_data
+                        if start_date_dt <= datetime.strptime(entry["date"], "%Y-%m-%d").date() <= end_date_dt
+                    ]
+                else:
+                    filtered_weather_data = weather_data
+
+                return jsonify({
+                    "message": "Data fetched from database.",
+                    "location": location,
+                    "weather_data": filtered_weather_data
+                }), 200
+
+        return jsonify({"error": f"No data found for location '{location}'."}), 404
+
+    except Exception as e:
+        print(f"Error in /current-weather: {e}")
+        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
+
+# CREATE endpoint
 @app.route("/create", methods=["POST"])
 def create_weather_request():
     try:
@@ -88,7 +132,7 @@ def create_weather_request():
         # Adjust the end date to the maximum allowed (7 days ahead)
         limited_end_date = min(end_date_dt, max_date)
         exceeded_limit = end_date_dt > max_date
-
+        
         # Fetch historical data for the range prior to today
         if start_date_dt < today:
             for single_date in (start_date_dt + timedelta(days=n) for n in range((min(today, end_date_dt) - start_date_dt).days)):
@@ -102,12 +146,16 @@ def create_weather_request():
                     if "data" in day_data and day_data["data"]:
                         current_weather = day_data["data"][0]
                         weather_data.append({
-                            "date": single_datetime.date().strftime("%Y-%m-%d"),  # Correct date handling
+                            "date": single_datetime.date().strftime("%Y-%m-%d"),  # Correct date format
                             "temp": current_weather.get("temp", "N/A"),
                             "conditions": current_weather.get("weather", [{}])[0].get("description", "N/A"),
+                            # Use defaults if keys are missing
+                            "humidity": current_weather.get("humidity", "N/A"),  # Adjust if key differs in historical data
+                            "wind_speed": current_weather.get("wind_speed", "N/A"),  # Adjust if key differs in historical data
                         })
                 else:
                     print(f"Error fetching historical weather for {single_date.strftime('%Y-%m-%d')}: {response.text}")
+
 
         # Fetch forecast data for the remaining range
         if limited_end_date >= today:
@@ -118,13 +166,18 @@ def create_weather_request():
                 forecast_data = forecast_response.json()
                 if "daily" in forecast_data:
                     for daily in forecast_data["daily"]:
-                        forecast_date = datetime.fromtimestamp(daily["dt"], tz=timezone.utc).date()  # Use UTC-aware datetime
-                        if max(start_date_dt, today) <= forecast_date <= limited_end_date:
-                            weather_data.append({
-                                "date": forecast_date.strftime("%Y-%m-%d"),  # Ensure correct date format
-                                "temp": daily.get("temp", {}).get("day", "N/A"),
-                                "conditions": daily.get("weather", [{}])[0].get("description", "N/A"),
-                            })
+                        if "dt" in daily:  # Check if 'dt' exists
+                            forecast_date = datetime.fromtimestamp(daily["dt"], tz=timezone.utc).date()
+                            if max(start_date_dt, today) <= forecast_date <= limited_end_date:
+                                weather_data.append({
+                                    "date": forecast_date.strftime("%Y-%m-%d"),  # Correct date format
+                                    "temp": daily.get("temp", {}).get("day", "N/A"),
+                                    "conditions": daily.get("weather", [{}])[0].get("description", "N/A"),
+                                    "humidity": daily.get("humidity", "N/A"),
+                                    "wind_speed": daily.get("wind_speed", "N/A"),
+                                })
+            else:
+                print(f"Error fetching forecast data: {forecast_response.text}")
 
         # Ensure no duplicate entries in weather_data
         unique_weather_data = {entry["date"]: entry for entry in weather_data}.values()
@@ -157,103 +210,6 @@ def create_weather_request():
         print(f"Error in /create: {e}")
         return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
 
-
-
-@app.route("/current-weather", methods=["GET"])
-def current_weather():
-    try:
-        location = request.args.get("location")
-        lat = request.args.get("lat")
-        lon = request.args.get("lon")
-        start_date = request.args.get("start_date")
-        end_date = request.args.get("end_date")
-
-        print(f"Request received: location={location}, lat={lat}, lon={lon}, start_date={start_date}, end_date={end_date}")
-
-        if not start_date or not end_date:
-            return jsonify({"error": "Start and end dates are required."}), 400
-
-        # Convert dates to datetime objects
-        start_date_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
-        end_date_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
-
-        # Case 1: Fetch from the database if location is provided
-        if location:
-            ref = db.reference("weather_requests")
-            saved_data = ref.order_by_child("location").equal_to(location).get()
-            print(f"Query result for location '{location}': {saved_data}")
-
-            if saved_data:
-                for key, value in saved_data.items():
-                    weather_data = [
-                        entry for entry in value.get("weather_data", [])
-                        if start_date_dt <= datetime.strptime(entry["date"], "%Y-%m-%d").date() <= end_date_dt
-                    ]
-
-                    # Filter weather data by the requested date range
-                    filtered_weather_data = [
-                        entry for entry in weather_data
-                        if start_date_dt <= datetime.strptime(entry["date"], "%Y-%m-%d").date() <= end_date_dt
-                    ]
-
-                    return jsonify({
-                        "message": "Data fetched from database.",
-                        "location": location,
-                        "weather_data": filtered_weather_data
-                    }), 200
-
-            return jsonify({"error": f"No data found for location '{location}'."}), 404
-
-        # Case 2: Fetch from the API if lat and lon are provided
-        if lat and lon:
-            api_key = os.getenv("API_KEY")
-            date_diff = (end_date_dt - start_date_dt).days + 1
-
-            if date_diff > 14:
-                return jsonify({"error": "You can only request weather data for up to 14 days at a time."}), 400
-
-            # Reverse Geocoding to get city name
-            geo_url = f"http://api.openweathermap.org/geo/1.0/reverse?lat={lat}&lon={lon}&limit=1&appid={api_key}"
-            geo_response = requests.get(geo_url)
-            if geo_response.status_code != 200 or not geo_response.json():
-                return jsonify({"error": "Failed to fetch location details."}), 500
-
-            geo_data = geo_response.json()[0]
-            city_name = geo_data.get("name", "Current Location")
-
-            # Fetch weather data
-            weather_data = []
-            for single_date in (start_date_dt + timedelta(days=n) for n in range(date_diff)):
-                single_datetime = datetime.combine(single_date, datetime.min.time(), timezone.utc)
-                unix_time = int(single_datetime.timestamp())
-                weather_url = f"https://api.openweathermap.org/data/3.0/onecall/timemachine?lat={lat}&lon={lon}&dt={unix_time}&appid={api_key}&units=imperial"
-                response = requests.get(weather_url)
-
-                if response.status_code != 200:
-                    return jsonify({"error": f"Error fetching weather for {single_date.strftime('%Y-%m-%d')}.", "details": response.text}), 500
-
-                data = response.json()
-                if "data" in data and data["data"]:
-                    day_data = data["data"][0]
-                    weather_data.append({
-                        "date": single_date.strftime("%Y-%m-%d"),
-                        "temp": day_data.get("temp", "N/A"),
-                        "conditions": day_data["weather"][0]["description"] if day_data.get("weather") else "N/A"
-                    })
-
-            return jsonify({
-                "location": city_name,
-                "weather_data": weather_data
-            }), 200
-
-        return jsonify({"error": "Either location or latitude and longitude are required."}), 400
-
-    except Exception as e:
-        print(f"Error in /current-weather: {e}")
-        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
-
-
-    
 @app.route("/read-locations", methods=["GET"])
 def read_locations():
     try:
@@ -273,7 +229,6 @@ def read_locations():
     except Exception as e:
         print(f"Error in /read-locations: {e}")
         return jsonify({"error": "An unexpected error occurred while fetching locations."}), 500
-
 
 if __name__ == "__main__":
     app.run(debug=True)
