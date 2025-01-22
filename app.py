@@ -55,13 +55,18 @@ def current_weather():
             if saved_data:
                 for key, value in saved_data.items():
                     weather_data = value.get("weather_data", [])
-                    start_date = value.get("date_range", {}).get("start_date")
-                    end_date = value.get("date_range", {}).get("end_date")
-                    break  # Only process the first matching entry
+                    date_range = value.get("date_range", {})
+                    start_date = date_range.get("start_date")
+                    end_date = date_range.get("end_date")
+                    break  # Process only the first matching entry
 
+                # Check if start_date and end_date are available
                 if not start_date or not end_date:
-                    return jsonify({"error": "Start and end dates are required for this location."}), 400
+                    return jsonify({
+                        "error": "Start and end dates are missing for this location. Please provide valid dates."
+                    }), 400
 
+                # Filter weather data by date range
                 filtered_weather_data = [
                     entry for entry in weather_data
                     if datetime.strptime(entry["date"], "%Y-%m-%d").date() >= datetime.strptime(start_date, "%Y-%m-%d").date() and
@@ -71,15 +76,23 @@ def current_weather():
                 return jsonify({
                     "message": "Data fetched from database.",
                     "location": location,
-                    "weather_data": filtered_weather_data
+                    "weather_data": filtered_weather_data,
+                    "date_range": {
+                        "start_date": start_date,
+                        "end_date": end_date
+                    }
                 }), 200
 
+            # If no data is found
+            print(f"No data found for location: {location}")
             return jsonify({"error": f"No data found for location '{location}'."}), 404
 
-        # Case 2: If `lat` and `lon` are provided, fetch weather data
+        # Case 2: If `lat` and `lon` are provided, fetch weather data from API
         if lat and lon:
             if not start_date or not end_date:
-                return jsonify({"error": "Start and end dates are required for live weather data."}), 400
+                return jsonify({
+                    "error": "Start and end dates are required for live weather data."
+                }), 400
 
             api_key = os.getenv("API_KEY")
 
@@ -96,6 +109,7 @@ def current_weather():
             weather_data = []
             start_date_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
             end_date_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+
             for single_date in (start_date_dt + timedelta(days=n) for n in range((end_date_dt - start_date_dt).days + 1)):
                 single_datetime = datetime.combine(single_date, datetime.min.time(), timezone.utc)
                 unix_time = int(single_datetime.timestamp())
@@ -122,6 +136,7 @@ def current_weather():
                 "weather_data": weather_data
             }), 200
 
+        # If neither `location` nor `lat/lon` is provided
         return jsonify({"error": "Either location or latitude and longitude are required."}), 400
 
     except Exception as e:
@@ -355,45 +370,32 @@ def update_location():
     try:
         data = request.json
         location = data.get("location")
-        updates = data.get("updates")
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
 
-        if not location or not updates:
-            return jsonify({"error": "Location and updates are required."}), 400
+        if not location or not start_date or not end_date:
+            return jsonify({"error": "All fields (location, start_date, end_date) are required."}), 400
 
-        # Validate updates
-        valid_keys = {"start_date", "end_date", "weather_data"}
-        for key in updates.keys():
-            if key not in valid_keys:
-                return jsonify({"error": f"Invalid update key: {key}. Allowed keys: {valid_keys}"}), 400
-
-        # Validate date formats
-        if "start_date" in updates:
-            try:
-                datetime.strptime(updates["start_date"], "%Y-%m-%d")
-            except ValueError:
-                return jsonify({"error": "Invalid start_date format. Use YYYY-MM-DD."}), 400
-        if "end_date" in updates:
-            try:
-                datetime.strptime(updates["end_date"], "%Y-%m-%d")
-            except ValueError:
-                return jsonify({"error": "Invalid end_date format. Use YYYY-MM-DD."}), 400
-
-        # Reference the Firebase database
         ref = db.reference("weather_requests")
         query_result = ref.order_by_child("location").equal_to(location).get()
 
         if not query_result:
             return jsonify({"error": f"No data found for location '{location}'."}), 404
 
-        # Update the record in the database
         for key in query_result.keys():
-            ref.child(key).update(updates)
-            print(f"Updated location '{location}' with data: {updates}")
-            return jsonify({"message": f"Location '{location}' has been successfully updated."}), 200
+            ref.child(key).update({
+                "date_range": {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                }
+            })
+
+        return jsonify({"message": f"Location '{location}' updated successfully."}), 200
 
     except Exception as e:
         print(f"Error in /update-location: {e}")
-        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+        return jsonify({"error": "An unexpected error occurred."}), 500
+
 
 
 

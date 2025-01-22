@@ -370,58 +370,55 @@
                     });
             };
             
-            document.getElementById("save-edit").onclick = async () => {
+            document.getElementById("save-edit").addEventListener("click", async (event) => {
+                event.preventDefault(); // Prevent form submission
+            
                 const modal = document.getElementById("edit-modal");
-                const spinner = document.getElementById("spinner");
                 const startDateInput = document.getElementById("edit-start-date");
                 const endDateInput = document.getElementById("edit-end-date");
                 const location = modal.getAttribute("data-location");
             
-                if (!location || location === "null") {
+                if (!location) {
                     alert("Invalid location. Please try again.");
                     return;
                 }
             
+                const updates = {
+                    location: location,
+                    start_date: startDateInput.value,
+                    end_date: endDateInput.value,
+                };
+            
+                const spinner = document.getElementById("spinner");
                 spinner.classList.remove("hidden"); // Show spinner
             
                 try {
-                    // Step 1: Delete current entries
-                    const deleteResponse = await fetch(`/delete-location?location=${encodeURIComponent(location)}`, {
-                        method: "DELETE",
-                    });
-            
-                    if (!deleteResponse.ok) {
-                        throw new Error("Failed to delete current entries.");
-                    }
-            
-                    // Step 2: Create new entries with updated dates
-                    const updates = {
-                        location,
-                        start_date: startDateInput.value,
-                        end_date: endDateInput.value,
-                    };
-            
-                    const createResponse = await fetch("/create", {
+                    // Call the backend to update and fetch new data
+                    const response = await fetch("/create", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(updates),
                     });
             
-                    const result = await createResponse.json();
-                    if (result.error) {
-                        throw new Error(result.error);
+                    const result = await response.json();
+            
+                    if (!response.ok || result.error) {
+                        throw new Error(result.error || "Failed to update the location.");
                     }
             
-                    alert("Data updated successfully!");
-                    updateLocationList(); // Refresh the location list
-                    modal.style.display = "none"; // Close the modal
+                    alert("Date range updated and weather data refreshed successfully!");
+                    modal.style.display = "none"; // Close modal
+                    updateLocationList(); // Refresh the list of locations
                 } catch (error) {
-                    console.error("Error during update:", error);
-                    alert("An error occurred while updating the location.");
+                    console.error("Error updating location:", error);
+                    alert("An error occurred while saving changes. Please try again.");
                 } finally {
                     spinner.classList.add("hidden"); // Hide spinner
                 }
-            };
+            });
+            
+            
+            
             
             document.getElementById("use-location").addEventListener("click", () => {
                 if (!navigator.geolocation) {
@@ -481,38 +478,38 @@
                 const startDateInput = document.getElementById("edit-start-date");
                 const endDateInput = document.getElementById("edit-end-date");
             
-                // Set the data-location attribute
+                // Set the data-location attribute for Save functionality
                 modal.setAttribute("data-location", location);
             
-                // Fetch the current data for the location
-                fetch(`/current-weather?location=${encodeURIComponent(location)}`)
-                    .then((response) => response.json())
-                    .then((data) => {
-                        if (data.error) {
-                            alert(data.error);
-                        } else {
-                            startDateInput.value = data.weather_data[0]?.start_date || "";
-                            endDateInput.value = data.weather_data[0]?.end_date || "";
-                            modal.style.display = "flex";
+                // Fetch stored data for the location
+                const storedLocationData = weatherData.find((entry) => entry.location === location);
             
-                            // Set text color to black after selecting dates
-                            startDateInput.style.color = "black";
-                            endDateInput.style.color = "black";
-                        }
-                    })
-                    .catch((error) => {
-                        console.error("Error fetching location data:", error);
-                        alert("An error occurred while fetching location data.");
-                    });
+                if (storedLocationData) {
+                    startDateInput.value = storedLocationData.start_date || ""; // Set start date
+                    endDateInput.value = storedLocationData.end_date || ""; // Set end date
+                } else {
+                    startDateInput.value = "";
+                    endDateInput.value = "";
+                }
+                
+                // Ensure text color is black
+                startDateInput.style.color = "black";
+                endDateInput.style.color = "black";
+                // Show modal
+                modal.style.display = "flex";
             
-                // Close modal on cancel
+                // Close modal when the cancel button is clicked
                 document.getElementById("close-modal").onclick = () => {
                     modal.style.display = "none";
                 };
+            
+                // Prevent default behavior
+                event.preventDefault();
             }
             
-            
-            
+
+
+
             document.getElementById("submit-request").addEventListener("click", () => {
                 const location = document.getElementById("location").value;
                 const startDate = document.getElementById("start-date").value;
