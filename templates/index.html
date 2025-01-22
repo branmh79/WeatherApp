@@ -107,9 +107,10 @@
                     updateWeatherCard();
                 }
             });
-
+            
             const fetchWeatherFromDatabase = (location) => {
                 feedback.innerHTML = `<p class="text-blue-500">Fetching data from the database...</p>`;
+            
                 fetch(`/current-weather?location=${encodeURIComponent(location)}`)
                     .then((response) => {
                         if (!response.ok) {
@@ -126,7 +127,7 @@
                             dataSource.innerHTML = `Displaying ${data.weather_data.length} days from the database.`;
                             weatherData = data.weather_data;
                             currentIndex = 0;
-                            updateWeatherCard();
+                            updateWeatherCard(); // Ensure navigation through days works
                             weatherOutput.style.display = "block";
                         }
                     })
@@ -136,20 +137,63 @@
                         weatherOutput.style.display = "none";
                     });
             };
+            
+
+            const deleteLocation = (location) => {
+                if (!confirm(`Are you sure you want to delete the location '${location}'?`)) {
+                    return;
+                }
+            
+                fetch(`/delete-location?location=${encodeURIComponent(location)}`, {
+                    method: "DELETE",
+                })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (data.error) {
+                            alert(data.error);
+                        } else {
+                            alert(data.message);
+                            updateLocationList(); // Refresh the location list
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error deleting location:", error);
+                        alert("An error occurred while deleting the location. Please try again.");
+                    });
+            };
+            
 
             const updateLocationList = () => {
                 fetch("/read-locations")
                     .then((response) => response.json())
                     .then((data) => {
                         const locations = data.locations;
-
+            
                         if (locations && locations.length > 0) {
                             locationList.innerHTML = locations
-                                .map((loc) => `<li class="px-4 py-2 cursor-pointer hover:bg-gray-100">${loc}</li>`)
+                                .map(
+                                    (loc) => `
+                                    <li class="px-4 py-2 flex justify-between items-center hover:bg-gray-100">
+                                        <span class="cursor-pointer">${loc}</span>
+                                        <button class="text-red-500 hover:text-red-700 delete-btn" data-location="${loc}">
+                                            &times;
+                                        </button>
+                                    </li>`
+                                )
                                 .join("");
-
-                            const listItems = locationList.querySelectorAll("li");
-                            listItems.forEach((item) => {
+            
+                            // Add event listeners to "X" buttons
+                            const deleteButtons = document.querySelectorAll(".delete-btn");
+                            deleteButtons.forEach((btn) => {
+                                btn.addEventListener("click", () => {
+                                    const location = btn.getAttribute("data-location");
+                                    deleteLocation(location);
+                                });
+                            });
+            
+                            // Add event listeners to location names
+                            const locationNames = locationList.querySelectorAll("span");
+                            locationNames.forEach((item) => {
                                 item.addEventListener("click", () => {
                                     fetchWeatherFromDatabase(item.textContent);
                                     locationInput.value = item.textContent;
@@ -165,27 +209,27 @@
                         locationList.innerHTML = `<li class="px-4 py-2 text-red-500">Failed to fetch locations</li>`;
                     });
             };
-
+            
             document.getElementById("use-location").addEventListener("click", () => {
                 if (!navigator.geolocation) {
                     feedback.innerHTML = `<p class="text-red-500">Geolocation is not supported by your browser.</p>`;
                     return;
                 }
-
+            
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         const lat = position.coords.latitude;
                         const lon = position.coords.longitude;
                         const startDate = document.getElementById("start-date").value;
                         const endDate = document.getElementById("end-date").value;
-
+            
                         if (!startDate || !endDate) {
                             feedback.innerHTML = `<p class="text-red-500">Please select a start and end date.</p>`;
                             return;
                         }
-
+            
                         feedback.innerHTML = `<p class="text-blue-500">Fetching weather for your current location...</p>`;
-
+            
                         fetch(`/current-weather?lat=${lat}&lon=${lon}&start_date=${startDate}&end_date=${endDate}`)
                             .then((response) => {
                                 if (!response.ok) {
@@ -218,6 +262,7 @@
                     }
                 );
             });
+            
 
             document.getElementById("submit-request").addEventListener("click", () => {
                 const location = document.getElementById("location").value;

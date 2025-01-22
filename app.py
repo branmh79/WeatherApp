@@ -38,34 +38,33 @@ def home():
 def current_weather():
     try:
         location = request.args.get("location")
+        lat = request.args.get("lat")
+        lon = request.args.get("lon")
         start_date = request.args.get("start_date")
         end_date = request.args.get("end_date")
 
-        print(f"Request received: location={location}, start_date={start_date}, end_date={end_date}")
+        print(f"Request received: location={location}, lat={lat}, lon={lon}, start_date={start_date}, end_date={end_date}")
 
-        if not location:
-            return jsonify({"error": "Location is required."}), 400
+        # Case 1: If `location` is provided, fetch from the database
+        if location:
+            ref = db.reference("weather_requests")
+            saved_data = ref.order_by_child("location").equal_to(location).get()
 
-        # Fetch data from Firebase
-        ref = db.reference("weather_requests")
-        saved_data = ref.order_by_child("location").equal_to(location).get()
-        print(f"Query result for location '{location}': {saved_data}")
+            if saved_data:
+                for key, value in saved_data.items():
+                    weather_data = value.get("weather_data", [])
+                    start_date = value.get("date_range", {}).get("start_date")
+                    end_date = value.get("date_range", {}).get("end_date")
+                    break  # Only process the first matching entry
 
-        if saved_data:
-            for key, value in saved_data.items():
-                weather_data = value.get("weather_data", [])
-                filtered_weather_data = []
+                if not start_date or not end_date:
+                    return jsonify({"error": "Start and end dates are required for this location."}), 400
 
-                # Filter weather data by date range if provided
-                if start_date and end_date:
-                    start_date_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
-                    end_date_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
-                    filtered_weather_data = [
-                        entry for entry in weather_data
-                        if start_date_dt <= datetime.strptime(entry["date"], "%Y-%m-%d").date() <= end_date_dt
-                    ]
-                else:
-                    filtered_weather_data = weather_data
+                filtered_weather_data = [
+                    entry for entry in weather_data
+                    if datetime.strptime(entry["date"], "%Y-%m-%d").date() >= datetime.strptime(start_date, "%Y-%m-%d").date() and
+                    datetime.strptime(entry["date"], "%Y-%m-%d").date() <= datetime.strptime(end_date, "%Y-%m-%d").date()
+                ]
 
                 return jsonify({
                     "message": "Data fetched from database.",
@@ -73,11 +72,84 @@ def current_weather():
                     "weather_data": filtered_weather_data
                 }), 200
 
-        return jsonify({"error": f"No data found for location '{location}'."}), 404
+            return jsonify({"error": f"No data found for location '{location}'."}), 404
+
+        # Case 2: If `lat` and `lon` are provided, fetch weather data
+        if lat and lon:
+            if not start_date or not end_date:
+                return jsonify({"error": "Start and end dates are required for live weather data."}), 400
+
+            api_key = os.getenv("API_KEY")
+
+            # Reverse Geocoding to get city name
+            geo_url = f"http://api.openweathermap.org/geo/1.0/reverse?lat={lat}&lon={lon}&limit=1&appid={api_key}"
+            geo_response = requests.get(geo_url)
+            if geo_response.status_code != 200 or not geo_response.json():
+                city_name = "Current Location"
+            else:
+                geo_data = geo_response.json()[0]
+                city_name = geo_data.get("name", "Current Location")
+
+            # Fetch weather data
+            weather_data = []
+            start_date_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+            for single_date in (start_date_dt + timedelta(days=n) for n in range((end_date_dt - start_date_dt).days + 1)):
+                single_datetime = datetime.combine(single_date, datetime.min.time(), timezone.utc)
+                unix_time = int(single_datetime.timestamp())
+                weather_url = f"https://api.openweathermap.org/data/3.0/onecall/timemachine?lat={lat}&lon={lon}&dt={unix_time}&appid={api_key}&units=imperial"
+                response = requests.get(weather_url)
+
+                if response.status_code != 200:
+                    print(f"Error fetching weather for {single_date.strftime('%Y-%m-%d')}: {response.text}")
+                    continue
+
+                data = response.json()
+                if "data" in data and data["data"]:
+                    day_data = data["data"][0]
+                    weather_data.append({
+                        "date": single_date.strftime("%Y-%m-%d"),
+                        "temp": day_data.get("temp", "N/A"),
+                        "conditions": day_data.get("weather", [{}])[0].get("description", "N/A"),
+                        "humidity": day_data.get("humidity", "N/A"),
+                        "wind_speed": day_data.get("wind_speed", "N/A"),
+                    })
+
+            return jsonify({
+                "location": city_name,
+                "weather_data": weather_data
+            }), 200
+
+        return jsonify({"error": "Either location or latitude and longitude are required."}), 400
 
     except Exception as e:
         print(f"Error in /current-weather: {e}")
-        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}. Please try again later."}), 500
+
+
+@app.route("/delete-location", methods=["DELETE"])
+def delete_location():
+    try:
+        location = request.args.get("location")
+        if not location:
+            return jsonify({"error": "Location is required to delete."}), 400
+
+        # Reference the Firebase database node
+        ref = db.reference("weather_requests")
+        query_result = ref.order_by_child("location").equal_to(location).get()
+
+        if query_result:
+            for key in query_result.keys():
+                # Delete the node by key
+                db.reference(f"weather_requests/{key}").delete()
+                print(f"Deleted location '{location}' from the database.")
+                return jsonify({"message": f"Location '{location}' has been deleted."}), 200
+
+        print(f"No matching data found for location '{location}'.")
+        return jsonify({"error": f"No data found for location '{location}'."}), 404
+    except Exception as e:
+        print(f"Error in /delete-location: {e}")
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 # CREATE endpoint
 @app.route("/create", methods=["POST"])
@@ -229,6 +301,34 @@ def read_locations():
     except Exception as e:
         print(f"Error in /read-locations: {e}")
         return jsonify({"error": "An unexpected error occurred while fetching locations."}), 500
+
+@app.route("/update-location", methods=["PUT"])
+def update_location():
+    try:
+        data = request.json
+        location = data.get("location")
+        updates = data.get("updates")
+
+        if not location or not updates:
+            return jsonify({"error": "Location and updates are required."}), 400
+
+        # Reference the Firebase database
+        ref = db.reference("weather_requests")
+        query_result = ref.order_by_child("location").equal_to(location).get()
+
+        if query_result:
+            for key in query_result.keys():
+                # Update the specific fields in the database
+                ref.child(key).update(updates)
+                print(f"Updated location '{location}' with data: {updates}")
+                return jsonify({"message": f"Location '{location}' has been updated."}), 200
+
+        return jsonify({"error": f"No data found for location '{location}'."}), 404
+
+    except Exception as e:
+        print(f"Error in /update-location: {e}")
+        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)
