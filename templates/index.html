@@ -10,21 +10,25 @@
     <div class="bg-white text-gray-900 rounded-lg shadow-lg p-8 max-w-lg w-full">
         <h1 class="text-3xl font-bold text-center mb-6 text-blue-600">Weather App</h1>
         <form id="weather-form" class="space-y-4">
-            <input type="text" id="location" placeholder="Enter location" required
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="relative">
+                <div class="flex items-center space-x-4 mb-2">
+                    <button type="button" id="use-location"
+                        class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">
+                        Use Current Location
+                    </button>
+                </div>
+                <input type="text" id="location" placeholder="Enter location or select from below" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <ul id="location-list" class="absolute bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-40 overflow-auto w-full hidden">
+                    <!-- Dynamically generated options will appear here -->
+                </ul>
+            </div>
             <div class="flex space-x-4">
                 <input type="date" id="start-date" placeholder="Start date" required
                     class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <input type="date" id="end-date" placeholder="End date" required
                     class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
-            <div class="flex items-center space-x-4">
-                <button type="button" id="use-location"
-                    class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">
-                    Use Current Location
-                </button>
-            </div>
-            
             <button type="button" id="submit-request"
                 class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">
                 Submit
@@ -33,93 +37,135 @@
         <div id="form-feedback" class="mt-4 text-center"></div>
 
         <div id="weather-output" class="mt-6 hidden">
-            <!-- Weather data will be dynamically rendered here -->
+            <h2 class="text-xl font-bold text-blue-600 mt-4">Weather Output</h2>
+            <p id="data-source" class="text-sm text-gray-600 mb-4"></p>
+            <div class="flex overflow-x-auto space-x-4 mt-4 scrollbar-thin scrollbar-thumb-blue-500 scrollbar-track-blue-200">
+                <!-- Weather cards will be dynamically rendered here -->
+            </div>
         </div>
     </div>
 
     <script>
-        document.getElementById("submit-request").addEventListener("click", () => {
-            const location = document.getElementById("location").value;
-            const startDate = document.getElementById("start-date").value;
-            const endDate = document.getElementById("end-date").value;
-        
-            const feedback = document.getElementById("form-feedback");
+        document.addEventListener("DOMContentLoaded", () => {
+            const locationInput = document.getElementById("location");
+            const locationList = document.getElementById("location-list");
             const weatherOutput = document.getElementById("weather-output");
-        
-            if (!location || !startDate || !endDate) {
-                feedback.innerHTML = `<p class="text-red-500">All fields are required.</p>`;
-                weatherOutput.style.display = "none";
-                return;
-            }
-        
-            feedback.innerHTML = `<p class="text-blue-500">Fetching weather data...</p>`;
-        
-            fetch("/create", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    location: location,
-                    start_date: startDate,
-                    end_date: endDate,
-                }),
-            })
-                .then((response) => {
-                    console.log("Response status:", response.status); // Debug log
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then((data) => {
-                    console.log("Data received from server:", data); // Debug log
-                    if (data.error) {
-                        feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
+            const weatherContainer = weatherOutput.querySelector(".flex");
+            const dataSource = document.getElementById("data-source");
+            const feedback = document.getElementById("form-feedback");
+
+            const updateLocationList = () => {
+                fetch("/read-locations")
+                    .then((response) => response.json())
+                    .then((data) => {
+                        const locations = data.locations;
+            
+                        if (locations && locations.length > 0) {
+                            locationList.innerHTML = locations
+                                .map((loc) => `<li class="px-4 py-2 cursor-pointer hover:bg-gray-100">${loc}</li>`)
+                                .join("");
+            
+                            const listItems = locationList.querySelectorAll("li");
+                            listItems.forEach((item) => {
+                                item.addEventListener("click", () => {
+                                    fetchWeatherFromDatabase(item.textContent);
+                                    locationInput.value = item.textContent;
+                                    locationList.style.display = "none";
+                                });
+                            });
+                        } else {
+                            locationList.innerHTML = `<li class="px-4 py-2 text-gray-500">No saved locations found</li>`;
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error fetching locations:", error);
+                        locationList.innerHTML = `<li class="px-4 py-2 text-red-500">Failed to fetch locations</li>`;
+                    });
+            };
+            
+            
+
+            const fetchWeatherFromDatabase = (location) => {
+                feedback.innerHTML = `<p class="text-blue-500">Fetching data from the database...</p>`;
+            
+                fetch(`/current-weather?location=${encodeURIComponent(location)}`)
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then((data) => {
+                        if (data.error) {
+                            feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
+                            weatherOutput.style.display = "none";
+                        } else {
+                            feedback.innerHTML = "";
+                            dataSource.innerHTML = `Displaying ${data.weather_data.length} days from the database.`;
+                            weatherContainer.innerHTML = ""; // Clear previous results
+                            data.weather_data.forEach((day) => {
+                                const [year, month, dayOfMonth] = day.date.split("-");
+                                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                                const formattedDate = `${months[parseInt(month, 10) - 1]}${dayOfMonth}`; // Format as 'Jan19'
+                                const temp = day.temp !== undefined ? `${day.temp}°F` : "N/A";
+                                const conditions = day.conditions || "N/A";
+            
+                                weatherContainer.innerHTML += `
+                                    <div class="bg-gray-100 p-4 rounded-lg w-40 flex-shrink-0 text-gray-900">
+                                        <p class="font-bold">${formattedDate}</p>
+                                        <p>Temp: ${temp}</p>
+                                        <p>${conditions}</p>
+                                    </div>`;
+                            });
+            
+                            weatherOutput.style.display = "block";
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error fetching data from database:", error);
+                        feedback.innerHTML = `<p class="text-red-500">An error occurred while fetching data from the database. Please try again later.</p>`;
                         weatherOutput.style.display = "none";
-                    } else {
-                        feedback.innerHTML = `<p class="text-green-500">${data.message}</p>`;
-                        let weatherHTML = "";
-                        data.weather_data.forEach((day) => {
-                            const dailyData = day.data[0];
-                            weatherHTML += `
-                                <div class="bg-gray-100 p-4 rounded-lg mb-2 text-gray-900">
-                                    <p>Date: ${new Date(dailyData.dt * 1000).toLocaleDateString()}</p>
-                                    <p>Temperature: ${dailyData.temp}°F</p>
-                                    <p>Conditions: ${dailyData.weather[0].description}</p>
-                                </div>`;
-                        });                        
+                    });
+            };
             
-                        weatherOutput.style.display = "block";
-                        weatherOutput.innerHTML = `
-                            <h2 class="text-xl font-bold text-blue-600 mt-4">Weather for ${data.location}</h2>
-                            ${weatherHTML}`;
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error caught in frontend:", error); // Debug log
-                    feedback.innerHTML = `<p class="text-red-500">An error occurred. Please try again later.</p>`;
-                    weatherOutput.style.display = "none";
-                });
             
-        });
-        
-        document.getElementById("use-location").addEventListener("click", () => {
-            const feedback = document.getElementById("form-feedback");
-            const weatherOutput = document.getElementById("weather-output");
-        
-            // Display loading feedback
-            feedback.innerHTML = `<p class="text-blue-500">Fetching your location...</p>`;
-        
-            // Get the user's current location using the Geolocation API
-            if (navigator.geolocation) {
+
+            // Initial call to populate the location list
+            updateLocationList();
+
+            // Show dropdown when input is clicked
+            locationInput.addEventListener("click", () => {
+                locationList.style.display = locationList.style.display === "block" ? "none" : "block";
+            });
+
+            // Hide dropdown when clicking outside
+            document.addEventListener("click", (event) => {
+                if (!locationInput.contains(event.target) && !locationList.contains(event.target)) {
+                    locationList.style.display = "none";
+                }
+            });
+
+            document.getElementById("use-location").addEventListener("click", () => {
+                if (!navigator.geolocation) {
+                    feedback.innerHTML = `<p class="text-red-500">Geolocation is not supported by your browser.</p>`;
+                    return;
+                }
+            
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         const lat = position.coords.latitude;
                         const lon = position.coords.longitude;
-        
-                        // Fetch current weather for the user's location
-                        fetch(`/current-weather?lat=${lat}&lon=${lon}`)
+                        const startDate = document.getElementById("start-date").value;
+                        const endDate = document.getElementById("end-date").value;
+            
+                        if (!startDate || !endDate) {
+                            feedback.innerHTML = `<p class="text-red-500">Please select a start and end date.</p>`;
+                            return;
+                        }
+            
+                        feedback.innerHTML = `<p class="text-blue-500">Fetching weather for your current location...</p>`;
+            
+                        fetch(`/current-weather?lat=${lat}&lon=${lon}&start_date=${startDate}&end_date=${endDate}`)
                             .then((response) => {
                                 if (!response.ok) {
                                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -127,32 +173,106 @@
                                 return response.json();
                             })
                             .then((data) => {
-                                feedback.innerHTML = `<p class="text-green-500">Weather data fetched successfully!</p>`;
-                                weatherOutput.style.display = "block";
-                                weatherOutput.innerHTML = `
-                                    <h2 class="text-xl font-bold text-blue-600 mt-4">Weather for ${data.location}</h2>
-                                    <div class="bg-gray-100 p-4 rounded-lg mb-2 text-gray-900">
-                                        <p>Temperature: ${data.temp}°F</p>
-                                        <p>Conditions: ${data.weather}</p>
-                                    </div>`;
+                                if (data.error) {
+                                    feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
+                                    weatherOutput.style.display = "none";
+                                } else {
+                                    feedback.innerHTML = "";
+                                    dataSource.innerHTML = `Displaying weather for current location (${data.location}).`;
+                                    weatherContainer.innerHTML = ""; // Clear previous results
+                                    data.weather_data.forEach((day) => {
+                                        const [year, month, dayOfMonth] = day.date.split("-");
+                                        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                                        const formattedDate = `${months[parseInt(month, 10) - 1]}${dayOfMonth}`; // Format as 'Jan19'
+                                        const temp = day.temp !== "N/A" ? `${day.temp}°F` : "Temperature not available";
+                                        const conditions = day.conditions !== "N/A" ? day.conditions : "Conditions not available";
+                                    
+                                        weatherContainer.innerHTML += `
+                                            <div class="bg-gray-100 p-4 rounded-lg w-40 flex-shrink-0 text-gray-900">
+                                                <p class="font-bold">${formattedDate}</p>
+                                                <p>Temp: ${temp}</p>
+                                                <p>${conditions}</p>
+                                            </div>`;
+                                    });
+            
+                                    weatherOutput.style.display = "block";
+                                }
                             })
                             .catch((error) => {
-                                console.error("Error fetching weather data:", error);
-                                feedback.innerHTML = `<p class="text-red-500">Unable to fetch weather data. Please try again later.</p>`;
+                                console.error("Error fetching current location weather:", error);
+                                feedback.innerHTML = `<p class="text-red-500">An error occurred while fetching weather for your location.</p>`;
                                 weatherOutput.style.display = "none";
                             });
                     },
                     (error) => {
+                        feedback.innerHTML = `<p class="text-red-500">Unable to retrieve your location. Please try again later.</p>`;
                         console.error("Geolocation error:", error);
-                        feedback.innerHTML = `<p class="text-red-500">Unable to access your location. Please enable location services and try again.</p>`;
-                        weatherOutput.style.display = "none";
                     }
                 );
-            } else {
-                feedback.innerHTML = `<p class="text-red-500">Geolocation is not supported by your browser.</p>`;
-            }
+            });
+            
+            
+            
+            document.getElementById("submit-request").addEventListener("click", () => {
+                const location = document.getElementById("location").value;
+                const startDate = document.getElementById("start-date").value;
+                const endDate = document.getElementById("end-date").value;
+            
+                if (!location || !startDate || !endDate) {
+                    feedback.innerHTML = `<p class="text-red-500">All fields are required.</p>`;
+                    weatherOutput.style.display = "none";
+                    return;
+                }
+            
+                feedback.innerHTML = `<p class="text-blue-500">Fetching weather data...</p>`;
+            
+                fetch("/create", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ location, start_date: startDate, end_date: endDate })
+                })
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then((data) => {
+                        if (data.error) {
+                            feedback.innerHTML = `<p class="text-red-500">${data.error}</p>`;
+                            weatherOutput.style.display = "none";
+                        } else {
+                            feedback.innerHTML = `<p class="text-green-500">${data.message}</p>`;
+                            dataSource.innerHTML = `Displaying weather for ${data.location}`;
+                            weatherContainer.innerHTML = ""; // Clear previous results
+                            data.weather_data.forEach((day) => {
+                                const [year, month, dayOfMonth] = day.date.split("-");
+                                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                                const formattedDate = `${months[parseInt(month, 10) - 1]}${dayOfMonth}`; // Format as 'Jan19'
+                                const temp = day.temp !== "N/A" ? `${day.temp}°F` : "Temperature not available";
+                                const conditions = day.conditions !== "N/A" ? day.conditions : "Conditions not available";
+                            
+                                weatherContainer.innerHTML += `
+                                    <div class="bg-gray-100 p-4 rounded-lg w-40 flex-shrink-0 text-gray-900">
+                                        <p class="font-bold">${formattedDate}</p>
+                                        <p>Temp: ${temp}</p>
+                                        <p>${conditions}</p>
+                                    </div>`;
+                            });
+            
+                            weatherOutput.style.display = "block";
+
+                            updateLocationList();
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error caught in frontend:", error);
+                        feedback.innerHTML = `<p class="text-red-500">An error occurred. Please try again later.</p>`;
+                        weatherOutput.style.display = "none";
+                    });
+            });
+            
         });
-        
     </script>
 </body>
 </html>
