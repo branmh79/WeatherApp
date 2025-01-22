@@ -312,22 +312,41 @@ def update_location():
         if not location or not updates:
             return jsonify({"error": "Location and updates are required."}), 400
 
+        # Validate updates
+        valid_keys = {"start_date", "end_date", "weather_data"}
+        for key in updates.keys():
+            if key not in valid_keys:
+                return jsonify({"error": f"Invalid update key: {key}. Allowed keys: {valid_keys}"}), 400
+
+        # Validate date formats
+        if "start_date" in updates:
+            try:
+                datetime.strptime(updates["start_date"], "%Y-%m-%d")
+            except ValueError:
+                return jsonify({"error": "Invalid start_date format. Use YYYY-MM-DD."}), 400
+        if "end_date" in updates:
+            try:
+                datetime.strptime(updates["end_date"], "%Y-%m-%d")
+            except ValueError:
+                return jsonify({"error": "Invalid end_date format. Use YYYY-MM-DD."}), 400
+
         # Reference the Firebase database
         ref = db.reference("weather_requests")
         query_result = ref.order_by_child("location").equal_to(location).get()
 
-        if query_result:
-            for key in query_result.keys():
-                # Update the specific fields in the database
-                ref.child(key).update(updates)
-                print(f"Updated location '{location}' with data: {updates}")
-                return jsonify({"message": f"Location '{location}' has been updated."}), 200
+        if not query_result:
+            return jsonify({"error": f"No data found for location '{location}'."}), 404
 
-        return jsonify({"error": f"No data found for location '{location}'."}), 404
+        # Update the record in the database
+        for key in query_result.keys():
+            ref.child(key).update(updates)
+            print(f"Updated location '{location}' with data: {updates}")
+            return jsonify({"message": f"Location '{location}' has been successfully updated."}), 200
 
     except Exception as e:
         print(f"Error in /update-location: {e}")
-        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
 
 
 if __name__ == "__main__":

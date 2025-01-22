@@ -57,6 +57,55 @@
         </div>
     </div>
 
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold text-blue-600 mb-4">Edit Location</h2>
+            <form id="edit-form" class="space-y-4">
+                <div>
+                    <label for="edit-start-date" class="block text-gray-700 font-medium mb-2">Start Date</label>
+                    <input type="date" id="edit-start-date" required
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="edit-end-date" class="block text-gray-700 font-medium mb-2">End Date</label>
+                    <input type="date" id="edit-end-date" required
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="close-modal"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg">
+                        Cancel
+                    </button>
+                    <button type="button" id="save-edit"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Spinner -->
+    <div id="spinner" class="hidden fixed inset-0 flex items-center justify-center bg-gray-600 bg-opacity-50 z-50">
+        <div class="w-16 h-16 border-4 border-blue-500 border-solid border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <div id="edit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-96 relative">
+            <h2 class="text-lg font-bold mb-4">Edit Weather Data</h2>
+            <form id="edit-form">
+                <label class="block mb-2">Start Date</label>
+                <input type="date" id="edit-start-date" class="w-full border rounded-lg px-3 py-2 mb-4">
+                <label class="block mb-2">End Date</label>
+                <input type="date" id="edit-end-date" class="w-full border rounded-lg px-3 py-2 mb-4">
+                <button type="button" id="save-edit"
+                    class="bg-blue-500 text-white px-4 py-2 rounded-lg">Save</button>
+            </form>
+            <button id="close-modal" class="absolute top-2 right-2 text-gray-500">&times;</button>
+        </div>
+    </div>
+
     <script>
         document.addEventListener("DOMContentLoaded", () => {
             const locationInput = document.getElementById("location");
@@ -71,6 +120,7 @@
             const nextDayButton = document.getElementById("next-day");
             const dataSource = document.getElementById("data-source");
             const feedback = document.getElementById("form-feedback");
+            const editModal = document.getElementById("edit-modal");
 
             let currentIndex = 0;
             let weatherData = [];
@@ -80,15 +130,11 @@
                 const [year, month, dayOfMonth] = day.date.split("-");
                 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
                 const formattedDate = `${months[parseInt(month, 10) - 1]} ${dayOfMonth}`;
-            
                 weatherDate.textContent = formattedDate;
                 weatherTemp.textContent = `Temp: ${day.temp !== "N/A" ? `${day.temp}°F` : "Temperature not available"}`;
                 weatherConditions.textContent = `Conditions: ${day.conditions || "Conditions not available"}`;
-                weatherExtra.textContent = `
-                    Humidity: ${day.humidity !== "N/A" ? `${day.humidity}%` : "N/A"},
-                    Wind: ${day.wind_speed !== "N/A" ? `${day.wind_speed} mph` : "N/A"}
-                `;
-            
+                weatherExtra.textContent = `Humidity: ${day.humidity || "N/A"}%, Wind: ${day.wind_speed || "N/A"} mph`;
+
                 prevDayButton.style.display = currentIndex > 0 ? "block" : "none";
                 nextDayButton.style.display = currentIndex < weatherData.length - 1 ? "block" : "none";
             };
@@ -173,25 +219,37 @@
                             locationList.innerHTML = locations
                                 .map(
                                     (loc) => `
-                                    <li class="px-4 py-2 flex justify-between items-center hover:bg-gray-100">
-                                        <span class="cursor-pointer">${loc}</span>
-                                        <button class="text-red-500 hover:text-red-700 delete-btn" data-location="${loc}">
+                                    <li class="px-4 py-2 flex items-center justify-between bg-gray-100 rounded-lg shadow hover:bg-gray-200">
+                                        <button class="text-blue-500 hover:text-blue-700 edit-btn mr-2" data-location="${loc}">
+                                            Edit
+                                        </button>
+                                        <span class="flex-grow text-center cursor-pointer">${loc}</span>
+                                        <button class="text-red-500 hover:text-red-700 delete-btn ml-2" data-location="${loc}">
                                             &times;
                                         </button>
                                     </li>`
                                 )
                                 .join("");
             
-                            // Add event listeners to "X" buttons
+                            // Attach event listeners for Edit buttons
+                            const editButtons = document.querySelectorAll(".edit-btn");
+                            editButtons.forEach((btn) => {
+                                btn.addEventListener("click", () => {
+                                    const location = btn.getAttribute("data-location");
+                                    openEditModal(location); // Function to handle editing
+                                });
+                            });
+            
+                            // Attach event listeners for Delete buttons
                             const deleteButtons = document.querySelectorAll(".delete-btn");
                             deleteButtons.forEach((btn) => {
                                 btn.addEventListener("click", () => {
                                     const location = btn.getAttribute("data-location");
-                                    deleteLocation(location);
+                                    deleteLocation(location); // Function to handle deletion
                                 });
                             });
             
-                            // Add event listeners to location names
+                            // Attach event listeners for location names (fetch weather)
                             const locationNames = locationList.querySelectorAll("span");
                             locationNames.forEach((item) => {
                                 item.addEventListener("click", () => {
@@ -208,6 +266,59 @@
                         console.error("Error fetching locations:", error);
                         locationList.innerHTML = `<li class="px-4 py-2 text-red-500">Failed to fetch locations</li>`;
                     });
+            };
+            
+            document.getElementById("save-edit").onclick = async () => {
+                const modal = document.getElementById("edit-modal");
+                const spinner = document.getElementById("spinner");
+                const startDateInput = document.getElementById("edit-start-date");
+                const endDateInput = document.getElementById("edit-end-date");
+                const location = modal.getAttribute("data-location");
+            
+                if (!location || location === "null") {
+                    alert("Invalid location. Please try again.");
+                    return;
+                }
+            
+                spinner.classList.remove("hidden"); // Show spinner
+            
+                try {
+                    // Step 1: Delete current entries
+                    const deleteResponse = await fetch(`/delete-location?location=${encodeURIComponent(location)}`, {
+                        method: "DELETE",
+                    });
+            
+                    if (!deleteResponse.ok) {
+                        throw new Error("Failed to delete current entries.");
+                    }
+            
+                    // Step 2: Create new entries with updated dates
+                    const updates = {
+                        location,
+                        start_date: startDateInput.value,
+                        end_date: endDateInput.value,
+                    };
+            
+                    const createResponse = await fetch("/create", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(updates),
+                    });
+            
+                    const result = await createResponse.json();
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+            
+                    alert("Data updated successfully!");
+                    updateLocationList(); // Refresh the location list
+                    modal.style.display = "none"; // Close the modal
+                } catch (error) {
+                    console.error("Error during update:", error);
+                    alert("An error occurred while updating the location.");
+                } finally {
+                    spinner.classList.add("hidden"); // Hide spinner
+                }
             };
             
             document.getElementById("use-location").addEventListener("click", () => {
@@ -263,7 +374,43 @@
                 );
             });
             
-
+            function openEditModal(location) {
+                const modal = document.getElementById("edit-modal");
+                const startDateInput = document.getElementById("edit-start-date");
+                const endDateInput = document.getElementById("edit-end-date");
+            
+                // Set the data-location attribute
+                modal.setAttribute("data-location", location);
+            
+                // Fetch the current data for the location
+                fetch(`/current-weather?location=${encodeURIComponent(location)}`)
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (data.error) {
+                            alert(data.error);
+                        } else {
+                            startDateInput.value = data.weather_data[0]?.start_date || "";
+                            endDateInput.value = data.weather_data[0]?.end_date || "";
+                            modal.style.display = "flex";
+            
+                            // Set text color to black after selecting dates
+                            startDateInput.style.color = "black";
+                            endDateInput.style.color = "black";
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error fetching location data:", error);
+                        alert("An error occurred while fetching location data.");
+                    });
+            
+                // Close modal on cancel
+                document.getElementById("close-modal").onclick = () => {
+                    modal.style.display = "none";
+                };
+            }
+            
+            
+            
             document.getElementById("submit-request").addEventListener("click", () => {
                 const location = document.getElementById("location").value;
                 const startDate = document.getElementById("start-date").value;
