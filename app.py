@@ -1,4 +1,6 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, make_response
+import csv
+import io
 import requests
 import os
 from datetime import datetime, timedelta, timezone
@@ -301,7 +303,53 @@ def read_locations():
     except Exception as e:
         print(f"Error in /read-locations: {e}")
         return jsonify({"error": "An unexpected error occurred while fetching locations."}), 500
+    
+    
+@app.route("/download-csv", methods=["GET"])
+def download_csv():
+    try:
+        # Reference the Firebase node containing the data
+        ref = db.reference("weather_requests")  # Use your Firebase node name
+        data = ref.get()
 
+        if not data:
+            return jsonify({"error": "No data available in the database."}), 404
+
+        # Prepare CSV data
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Location", "Start Date", "End Date", "Date", "Temperature (°F)", "Conditions", "Humidity (%)", "Wind Speed (mph)"])  # CSV headers
+
+        for location_key, location_data in data.items():
+            location = location_data.get("location", "Unknown")
+            start_date = location_data.get("date_range", {}).get("start_date", "N/A")
+            end_date = location_data.get("date_range", {}).get("end_date", "N/A")
+            weather_data = location_data.get("weather_data", [])
+
+            for weather_entry in weather_data:
+                writer.writerow([
+                    location,
+                    start_date,
+                    end_date,
+                    weather_entry.get("date", "N/A"),
+                    weather_entry.get("temp", "N/A"),
+                    weather_entry.get("conditions", "N/A"),
+                    weather_entry.get("humidity", "N/A"),
+                    weather_entry.get("wind_speed", "N/A")
+                ])
+
+        # Return the CSV as a downloadable file
+        output.seek(0)
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = "attachment; filename=weather_data.csv"
+        response.headers["Content-Type"] = "text/csv"
+        return response
+
+    except Exception as e:
+        print(f"Error in /download-csv: {e}")
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+    
 @app.route("/update-location", methods=["PUT"])
 def update_location():
     try:
